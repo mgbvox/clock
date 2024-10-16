@@ -1,0 +1,15 @@
+[package]
+name = "clock"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.38"
+clap = "4.5.20"
+crossterm = "0.28.1"
+sqlx = { version = "0.8.2", features = ["sqlite", "runtime-tokio", "tls-rustls-ring"] }
+tokio = { version = "1.40.0", features = ["test-util", "rt", "rt-multi-thread", "macros"] }
+
+
+[profile.dev.package.sqlx-macros]
+opt-level = 3
