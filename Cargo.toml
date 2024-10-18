@@ -5,11 +5,25 @@ edition = "2021"
 
 [dependencies]
 chrono = "0.4.38"
-clap = "4.5.20"
+clap = { version = "4.5.20", features = ["derive"] }
 crossterm = "0.28.1"
-sqlx = { version = "0.8.2", features = ["sqlite", "runtime-tokio", "tls-rustls-ring"] }
+dotenvy = "0.15.7"
+homedir = "0.3.4"
+sqlx = { version = "0.8.2", features = ["sqlite", "runtime-tokio", "tls-rustls-ring", "chrono"] }
 tokio = { version = "1.40.0", features = ["test-util", "rt", "rt-multi-thread", "macros"] }
 
 
 [profile.dev.package.sqlx-macros]
 opt-level = 3
+
+
+[profile.release]
+opt-level = 3          # Maximize performance but reduce binary size; use "3" if binary size is less important
+lto = "fat"              # Enable Link Time Optimization for better performance
+codegen-units = 1        # Maximize optimizations at the cost of longer compile time
+panic = "abort"          # Disable unwind code generation to reduce binary size and improve performance
+debug = false            # Remove debug symbols to reduce binary size
+rpath = false            # Disable runtime path lookup for shared libraries
+incremental = false      # Disable incremental compilation for faster runtime but slower compile time
+overflow-checks = false  # Remove overflow checks for optimized builds
+strip = "symbols"        # Strip symbols to reduce binary size (can also use "debuginfo" for more aggressive stripping)
