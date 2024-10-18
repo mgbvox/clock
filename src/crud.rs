@@ -7,12 +7,10 @@ pub async fn create(record: &CreateRecord, pool: &SqlitePool) -> Result<Record, 
         INSERT INTO work_hours
             (job_name, clock_in, clock_out, message)
         VALUES
-            (?, ?, ?, ?)"#,
+            (?, ?, NULL, NULL)"#,
     )
     .bind(&record.job_name)
     .bind(record.clock_in)
-    .bind(record.clock_out)
-    .bind(&record.message)
     .execute(pool)
     .await?;
 
@@ -20,8 +18,8 @@ pub async fn create(record: &CreateRecord, pool: &SqlitePool) -> Result<Record, 
         id: out.last_insert_rowid(),
         job_name: record.job_name.clone(),
         clock_in: record.clock_in,
-        clock_out: record.clock_out,
-        message: record.message.clone(),
+        clock_out: None,
+        message: None,
     })
 }
 

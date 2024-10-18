@@ -1,3 +1,4 @@
+mod cli;
 mod crud;
 mod display;
 mod models;
@@ -8,6 +9,7 @@ use std::error::Error;
 use crate::models::Record;
 use chrono::{Local, NaiveDateTime, TimeDelta};
 use clap::Parser;
+use cli::{Cli, Cmds};
 use sqlx::migrate::MigrateDatabase;
 use sqlx::sqlite::{Sqlite, SqlitePool};
 
@@ -47,49 +49,6 @@ async fn setup(url: &str) -> Result<SqlitePool, sqlx::Error> {
     sqlx::migrate!("./migrations").run(&pool).await?;
 
     Ok(pool)
-}
-
-#[derive(Parser, Debug)]
-#[command(
-    name = "clock",
-    version = VERSION,
-    author = "Matthew Billman",
-    about = "Clock in/out for work",
-    disable_version_flag = true
-)]
-struct Cli {
-    /// print version
-    #[arg(short = 'v', long = "version", help = "Print version")]
-    version: bool,
-
-    /// Clock in with a job name or job ID
-    #[arg(short = 'i', long = "in", value_name = "JOBNAME")]
-    clock_in: Option<String>,
-
-    /// Clock out of the current session
-    #[arg(short = 'o', long = "out")]
-    clock_out: bool,
-
-    /// Message to add to the clock-out log
-    #[arg(short = 'm', value_name = "MESSAGE")]
-    message: Option<String>,
-
-    /// List all clock-in and clock-out records
-    #[arg(long = "ls")]
-    list: bool,
-
-    /// Watch the active session, refreshing every -n seconds
-    #[arg(short = 'w', long = "watch", value_name = "WATCH")]
-    watch: bool,
-
-    /// Watch refresh
-    #[arg(
-        short = 'n',
-        long = "refresh",
-        value_name = "REFRESH",
-        default_value = "1"
-    )]
-    n: u64,
 }
 
 async fn find_active_session(pool: &SqlitePool) -> Result<Option<Record>, Box<dyn Error>> {
@@ -168,70 +127,39 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let pool = setup(url.as_str()).await?;
 
-    let args = Cli::parse();
-
-    if args.version {
-        println!("clock v{}-{}, by {}", VERSION, MODE, AUTHORS);
-        return Ok(());
-    }
-
-    if let Some(job_name) = args.clock_in {
-        match find_active_session(&pool).await? {
+    let cmd = Cli::parse();
+    match cmd.command {
+        Cmds::Version => println!("clock v{}-{}, by {}", VERSION, MODE, AUTHORS),
+        Cmds::In(args) => match find_active_session(&pool).await? {
             Some(active) => {
                 println!("There is currently an active session. Clock out first.");
                 println!("Job Name: {} | Job ID: {}", active.job_name, active.id);
                 println!("Consider running `clock --out` to end the current session.");
             }
             None => {
-                let result = clock_in(job_name, now(), &pool).await?;
+                let result = clock_in(args.job, now(), &pool).await?;
                 println!(
                     "Clock in to {} at {}, job id {}",
                     result.job_name, result.clock_in, result.id
                 );
             }
-        }
-    } else if args.clock_out {
-        match find_active_session(&pool).await? {
+        },
+        Cmds::Out(args) => match find_active_session(&pool).await? {
             Some(active) => {
-                if args.message.is_none() {
-                    println!("No message provided. Please provide a message with `-m`.");
-                } else {
-                    let clock_out_record = Record {
-                        clock_out: Some(now()),
-                        message: args.message.clone(),
-                        ..active
-                    };
+                let clock_out_record = Record {
+                    clock_out: Some(now()),
+                    message: Some(args.message),
+                    ..active
+                };
 
-                    clock_out(&clock_out_record, &pool).await?;
-                    println!("Clock out of {} at {}", clock_out_record.job_name, now());
-                }
+                clock_out(&clock_out_record, &pool).await?;
+                println!("Clock out of {} at {}", clock_out_record.job_name, now());
             }
             None => {
                 println!("There is no active session. Clock in first.");
             }
-        }
-    }
-
-    if args.list {
-        crud::find_all(&pool).await?.iter().for_each(|r| {
-            let out = match r.clock_out {
-                None => "None".to_string(),
-                Some(time) => time.to_string(),
-            };
-
-            println!(
-                "Job Name: {} | Job ID: {} | Clock In: {} | Clock Out: {} | Message: {}",
-                r.job_name,
-                r.id,
-                r.clock_in,
-                out,
-                r.message.clone().unwrap_or("None".to_string())
-            );
-        });
-    };
-
-    if args.watch {
-        loop {
+        },
+        Cmds::Watch { n } => loop {
             if let Some(session) = find_active_session(&pool).await? {
                 let elapsed = now().signed_duration_since(session.clock_in);
                 let message = format!(
@@ -242,13 +170,30 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
                 display::display_message(message);
 
-                tokio::time::sleep(std::time::Duration::from_secs(args.n)).await;
+                tokio::time::sleep(std::time::Duration::from_secs(n)).await;
             } else {
                 display::clear_screen();
                 display::display_msg_at("No active session.".into(), 0, 0);
                 println!();
                 return Ok(());
             }
+        },
+        Cmds::LS => {
+            crud::find_all(&pool).await?.iter().for_each(|r| {
+                let out = match r.clock_out {
+                    None => "None".to_string(),
+                    Some(time) => time.to_string(),
+                };
+
+                println!(
+                    "Job Name: {} | Job ID: {} | Clock In: {} | Clock Out: {} | Message: {}",
+                    r.job_name,
+                    r.id,
+                    r.clock_in,
+                    out,
+                    r.message.clone().unwrap_or("None".to_string())
+                );
+            });
         }
     }
 
