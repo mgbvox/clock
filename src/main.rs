@@ -11,6 +11,19 @@ use clap::Parser;
 use sqlx::migrate::MigrateDatabase;
 use sqlx::sqlite::{Sqlite, SqlitePool};
 
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+const DESCRIPTION: &str = env!("CARGO_PKG_DESCRIPTION");
+const HOMEPAGE: &str = env!("CARGO_PKG_HOMEPAGE");
+const REPOSITORY: &str = env!("CARGO_PKG_REPOSITORY");
+const LICENSE: &str = env!("CARGO_PKG_LICENSE");
+
+#[cfg(debug_assertions)]
+const MODE: &str = "debug";
+
+#[cfg(not(debug_assertions))]
+const MODE: &str = "release";
+
 async fn ensure_db(url: &str) {
     if !Sqlite::database_exists(url).await.unwrap_or(false) {
         println!("Creating database at {}", url);
@@ -20,7 +33,9 @@ async fn ensure_db(url: &str) {
         }
     } else {
         #[cfg(debug_assertions)]
-        println!("Using database at {}", url);
+        {
+            println!("Using database at {}", url);
+        }
     }
 }
 
@@ -37,11 +52,16 @@ async fn setup(url: &str) -> Result<SqlitePool, sqlx::Error> {
 #[derive(Parser, Debug)]
 #[command(
     name = "clock",
-    version = "1.0",
+    version = VERSION,
     author = "Matthew Billman",
-    about = "Clock in/out for work"
+    about = "Clock in/out for work",
+    disable_version_flag = true
 )]
 struct Cli {
+    /// print version
+    #[arg(short = 'v', long = "version", help = "Print version")]
+    version: bool,
+
     /// Clock in with a job name or job ID
     #[arg(short = 'i', long = "in", value_name = "JOBNAME")]
     clock_in: Option<String>,
@@ -150,10 +170,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let args = Cli::parse();
 
-    let active_session = find_active_session(&pool).await?;
+    if args.version {
+        println!("clock v{}-{}, by {}", VERSION, MODE, AUTHORS);
+        return Ok(());
+    }
 
     if let Some(job_name) = args.clock_in {
-        match active_session {
+        match find_active_session(&pool).await? {
             Some(active) => {
                 println!("There is currently an active session. Clock out first.");
                 println!("Job Name: {} | Job ID: {}", active.job_name, active.id);
@@ -168,7 +191,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     } else if args.clock_out {
-        match active_session {
+        match find_active_session(&pool).await? {
             Some(active) => {
                 if args.message.is_none() {
                     println!("No message provided. Please provide a message with `-m`.");
@@ -208,8 +231,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     if args.watch {
-        if let Some(session) = find_active_session(&pool).await? {
-            loop {
+        loop {
+            if let Some(session) = find_active_session(&pool).await? {
                 let elapsed = now().signed_duration_since(session.clock_in);
                 let message = format!(
                     "Session <<{}>> active time: {}",
@@ -220,6 +243,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 display::display_message(message);
 
                 tokio::time::sleep(std::time::Duration::from_secs(args.n)).await;
+            } else {
+                display::clear_screen();
+                display::display_msg_at("No active session.".into(), 0, 0);
+                println!();
+                return Ok(());
             }
         }
     }

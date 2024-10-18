@@ -25,3 +25,17 @@ pub fn display_message(message: String) {
 
     stdout().flush().unwrap();
 }
+
+pub fn display_msg_at(message: String, x_pos: u16, y_pos: u16) {
+    execute!(stdout(), Clear(ClearType::All)).unwrap();
+    execute!(stdout(), MoveTo(x_pos, y_pos)).unwrap();
+
+    // Print the message at the calculated position
+    execute!(stdout(), Print(&message)).unwrap();
+
+    stdout().flush().unwrap();
+}
+
+pub fn clear_screen() {
+    execute!(stdout(), Clear(ClearType::All)).unwrap();
+}
